@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  WAREHOUSE
+  SUPPORT
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  PACKING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUST
+  RETURN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  movements    StockMovement[]
+}
+
+model Product {
+  id           String           @id @default(cuid())
+  name         String
+  sku          String           @unique
+  price        Decimal          @db.Decimal(10, 2)
+  stock        Int              @default(0)
+  active       Boolean          @default(true)
+  description  String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  orderItems   OrderItem[]
+  movements    StockMovement[]
+}
+
+model Order {
+  id            String        @id @default(cuid())
+  customerName  String
+  email         String?
+  phone         String
+  addressLine1  String
+  city          String
+  emirate       String
+  status        OrderStatus   @default(PENDING_PAYMENT)
+  subtotal      Decimal       @db.Decimal(10, 2)
+  deliveryFee   Decimal       @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  totalQuantity Int
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  items         OrderItem[]
+  payment       Payment?
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Decimal @db.Decimal(10, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id           String        @id @default(cuid())
+  orderId      String        @unique
+  method       String        @default("COD")
+  status       PaymentStatus @default(UNPAID)
+  collectedAt  DateTime?
+  amount       Decimal       @db.Decimal(10, 2)
+  createdAt    DateTime      @default(now())
+  order        Order         @relation(fields: [orderId], references: [id])
+}
+
+model StockMovement {
+  id         String            @id @default(cuid())
+  productId  String
+  userId     String?
+  quantity   Int
+  type       StockMovementType
+  reason     String?
+  reference  String?
+  createdAt  DateTime          @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+}
