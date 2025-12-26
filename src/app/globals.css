@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-gray-50 text-slate-900 antialiased;
+}
+
+a {
+  @apply text-brand-700 hover:text-brand-800;
+}
+
+.card {
+  @apply rounded-xl border border-slate-200 bg-white shadow-card;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full px-2 py-1 text-xs font-medium;
+}
+
+.badge-green {
+  @apply badge bg-green-50 text-green-700 ring-1 ring-green-100;
+}
+
+.badge-yellow {
+  @apply badge bg-yellow-50 text-yellow-700 ring-1 ring-yellow-100;
+}
+
+.badge-red {
+  @apply badge bg-red-50 text-red-700 ring-1 ring-red-100;
+}
+
+.badge-blue {
+  @apply badge bg-blue-50 text-blue-700 ring-1 ring-blue-100;
+}
+
+.table {
+  @apply min-w-full divide-y divide-slate-200;
+}
+
+.table th {
+  @apply bg-slate-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600;
+}
+
+.table td {
+  @apply whitespace-nowrap px-4 py-3 text-sm text-slate-700;
+}
+
+input, select, textarea {
+  @apply rounded-lg border-slate-200 shadow-sm focus:border-brand-400 focus:ring-brand-200;
+}
+
+button:disabled {
+  @apply opacity-60 cursor-not-allowed;
+}
