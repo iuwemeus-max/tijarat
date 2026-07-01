@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: healthy-life-erp
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: DB_FILE
+        value: /opt/render/project/src/erp.sqlite
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CALLCENTER_PASSWORD
+        sync: false
+      - key: CORS_ORIGIN
+        value: '*'
+      - key: VITE_API_URL
+        value: ''
