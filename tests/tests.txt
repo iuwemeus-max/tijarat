@@ -1,0 +1,4 @@
+Manual smoke test:
+1. Open landing page: https://da576bb73e987a3493.v2.appdeploy.ai/
+2. Open admin page: https://da576bb73e987a3493.v2.appdeploy.ai/#admin
+3. Verify AppDeploy backend health: /api/_healthcheck
