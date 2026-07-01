@@ -1,26 +1,58 @@
-# Healthy Life ERP
+# Tijarat / Healthy Life ERP
 
-This repository mirrors the ERP project created in AppDeploy.
+Independent full-stack ERP and landing-page project converted from the AppDeploy version.
 
-## Live links
+## What is included
 
-- Landing page: https://da576bb73e987a3493.v2.appdeploy.ai/
-- Admin page: https://da576bb73e987a3493.v2.appdeploy.ai/#admin
+- Customer landing page with Happy Life Massage Oil offers
+- Cash-on-delivery order form
+- Admin ERP login at `/#admin`
+- Orders dashboard and search
+- Order status updates
+- Bulk dispatch workflow
+- 4x6 AWB print center
+- Courier management
+- Inventory management
+- Customer list view
+- Finance COD summary
+- Excel report exports
+- Users list
+- Independent Node/Express backend
+- Local SQLite database
 
-## AppDeploy source
+## Local setup
 
-- AppDeploy app id: `da576bb73e987a3493`
-- AppDeploy version: `1782800601108`
-- Architecture: React/Vite frontend + AppDeploy backend
+```bash
+npm install
+cp .env.example .env
+npm run dev
+```
 
-## Important backend note
+Frontend: `http://localhost:5173`
 
-The live backend uses AppDeploy-specific SDK services: `@appdeploy/sdk`, AppDeploy database, and AppDeploy secrets. This source is therefore meant as a GitHub mirror/reference unless the backend is later converted to a normal Node/Express database stack.
+Admin route: `http://localhost:5173/#admin`
 
-## Secrets
+Backend: `http://localhost:8080`
 
-Do not hardcode ERP passwords or API keys in GitHub. Configure these in AppDeploy secrets:
+## Environment variables
 
-- `ERP_ADMIN_PASSWORD`
-- `ERP_CALLCENTER_PASSWORD`
-- `RESEND_API_KEY` optional for email notifications
+Set these in `.env`:
+
+```bash
+PORT=8080
+DB_FILE=./erp.sqlite
+JWT_SECRET=replace-with-a-long-random-secret
+ADMIN_PASSWORD=your-admin-password
+CALLCENTER_PASSWORD=your-callcenter-password
+CORS_ORIGIN=http://localhost:5173
+VITE_API_URL=http://localhost:8080
+```
+
+## Deployment note
+
+GitHub stores the code. To get public customer/admin links from this independent version, deploy the frontend and backend to hosting such as Render, Railway, Vercel, VPS, or similar.
+
+Current old AppDeploy live links still exist:
+
+- Landing: https://da576bb73e987a3493.v2.appdeploy.ai/
+- Admin: https://da576bb73e987a3493.v2.appdeploy.ai/#admin
