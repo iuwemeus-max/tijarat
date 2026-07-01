@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+erp.sqlite
+erp.sqlite-*
+.DS_Store
+npm-debug.log*
