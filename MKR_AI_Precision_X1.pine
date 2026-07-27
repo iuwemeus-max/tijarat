@@ -1,505 +1,310 @@
 //@version=6
-strategy(
-     title="MKR AI Precision X1",
-     shorttitle="MKR AI X1",
-     overlay=true,
-     max_bars_back=1000,
-     pyramiding=0,
-     process_orders_on_close=true,
-     initial_capital=10000,
-     default_qty_type=strategy.percent_of_equity,
-     default_qty_value=10
-)
+strategy("MKR AI Precision X1 — Five Engine Strategy", shorttitle="MKR AI X1 5E", overlay=true, pyramiding=0, process_orders_on_close=true, max_bars_back=1500, max_labels_count=500, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
 
 //────────────────────────────────────
-// KERNEL SETTINGS
+// INPUTS
 //────────────────────────────────────
+gKernel = "1. Kernel + BB200 Foundation"
+src = input.source(close, "Kernel Source", group=gKernel)
+bandwidth = input.float(8.0, "Kernel Bandwidth", minval=1.0, step=0.5, group=gKernel)
+kLookback = input.int(50, "Kernel Lookback", minval=10, maxval=300, group=gKernel)
+kConfirm = input.int(1, "Kernel Direction Bars", minval=1, maxval=5, group=gKernel)
+bbLength = input.int(200, "BB Length", minval=20, group=gKernel)
+bbMult = input.float(2.0, "BB Deviation", minval=0.1, step=0.1, group=gKernel)
+outsideMode = input.string("Touch Outside", "Outside Requirement", options=["Touch Outside", "Close Outside"], group=gKernel)
+maxWait = input.int(30, "Maximum Re-entry Wait", minval=1, maxval=200, group=gKernel)
+allowSameBar = input.bool(true, "Allow Same-Bar Re-entry", group=gKernel)
 
-source = input.source(close, "Kernel Source", group="Kernel")
+gTrend = "2. Trend Engine"
+fastLen = input.int(21, "Fast EMA", minval=2, group=gTrend)
+slowLen = input.int(50, "Slow EMA", minval=3, group=gTrend)
+trendLen = input.int(200, "Major Trend EMA", minval=20, group=gTrend)
+useMajorTrend = input.bool(true, "Require Price vs Major EMA", group=gTrend)
+trendWeight = input.int(25, "Trend Weight", minval=0, maxval=100, group=gTrend)
 
-bandwidth = input.float(
-     8.0,
-     "Kernel Bandwidth",
-     minval=1.0,
-     step=0.5,
-     group="Kernel"
-)
+gMomentum = "3. Momentum Engine"
+rsiLen = input.int(14, "RSI Length", minval=2, group=gMomentum)
+rsiBull = input.float(52, "Bullish RSI Minimum", minval=0, maxval=100, group=gMomentum)
+rsiBear = input.float(48, "Bearish RSI Maximum", minval=0, maxval=100, group=gMomentum)
+wrLen = input.int(14, "Williams %R Length", minval=2, group=gMomentum)
+wrBuyLevel = input.float(-80, "Buy Recovery Level", minval=-100, maxval=0, group=gMomentum)
+wrSellLevel = input.float(-20, "Sell Recovery Level", minval=-100, maxval=0, group=gMomentum)
+momentumWeight = input.int(20, "Momentum Weight", minval=0, maxval=100, group=gMomentum)
 
-kernelLookback = input.int(
-     50,
-     "Kernel Lookback",
-     minval=10,
-     maxval=300,
-     group="Kernel"
-)
+gStructure = "4. Structure Engine"
+structureLen = input.int(5, "Structure Lookback", minval=2, maxval=50, group=gStructure)
+requireCandleDirection = input.bool(true, "Require Directional Candle", group=gStructure)
+requireBreak = input.bool(true, "Require Previous High/Low Break", group=gStructure)
+structureWeight = input.int(20, "Structure Weight", minval=0, maxval=100, group=gStructure)
 
-signalSensitivity = input.int(
-     1,
-     "Direction Confirmation Bars",
-     minval=1,
-     maxval=5,
-     tooltip="Lower values produce more kernel signals.",
-     group="Kernel"
-)
+gExhaustion = "5. Exhaustion Engine"
+atrLen = input.int(14, "ATR Length", minval=2, group=gExhaustion)
+minOutsideATR = input.float(0.0, "Minimum BB Overshoot in ATR", minval=0, step=0.1, group=gExhaustion)
+requireKernelTurn = input.bool(true, "Require Kernel Turn", group=gExhaustion)
+exhaustionWeight = input.int(25, "Exhaustion Weight", minval=0, maxval=100, group=gExhaustion)
 
-//────────────────────────────────────
-// BOLLINGER BAND SETTINGS
-//────────────────────────────────────
+gProbability = "6. AI Probability Engine"
+volWeight = input.int(10, "Volatility Weight", minval=0, maxval=100, group=gProbability)
+minAtrPercent = input.float(0.15, "Minimum ATR %", minval=0, step=0.01, group=gProbability)
+maxAtrPercent = input.float(5.0, "Maximum ATR %", minval=0.1, step=0.1, group=gProbability)
+minimumScore = input.int(65, "Minimum AI Score", minval=0, maxval=100, group=gProbability)
+strictMode = input.bool(false, "Strict Mode: all engines must pass", group=gProbability)
+cooldownBars = input.int(8, "Signal Cooldown Bars", minval=0, maxval=200, group=gProbability)
 
-bbLength = input.int(
-     200,
-     "Bollinger Band Length",
-     minval=2,
-     group="BB200"
-)
+gRisk = "7. Risk Management"
+enableLong = input.bool(true, "Enable Long", group=gRisk)
+enableShort = input.bool(true, "Enable Short", group=gRisk)
+closeOpposite = input.bool(true, "Close Opposite Position", group=gRisk)
+stopLossPct = input.float(1.0, "Stop Loss %", minval=0, step=0.1, group=gRisk)
+takeProfitPct = input.float(2.0, "Take Profit %", minval=0, step=0.1, group=gRisk)
+useTrailing = input.bool(false, "Enable Trailing Stop", group=gRisk)
+trailActivatePct = input.float(1.0, "Trail Activation %", minval=0.1, step=0.1, group=gRisk)
+trailDistancePct = input.float(0.5, "Trail Distance %", minval=0.1, step=0.1, group=gRisk)
 
-bbMultiplier = input.float(
-     2.0,
-     "Bollinger Band Deviation",
-     minval=0.1,
-     step=0.1,
-     group="BB200"
-)
-
-outsideMode = input.string(
-     "Touch Outside",
-     "Outside-Band Requirement",
-     options=["Touch Outside", "Close Outside"],
-     group="BB200"
-)
-
-maximumWaitBars = input.int(
-     30,
-     "Maximum Re-entry Wait",
-     minval=1,
-     maxval=200,
-     group="BB200"
-)
-
-allowSameCandleReentry = input.bool(
-     true,
-     "Allow Signal Candle to Re-enter",
-     group="BB200"
-)
+gDisplay = "8. Display"
+showKernel = input.bool(true, "Show Kernel", group=gDisplay)
+showBands = input.bool(true, "Show BB200", group=gDisplay)
+showEMAs = input.bool(true, "Show EMAs", group=gDisplay)
+showSetups = input.bool(true, "Show Setups", group=gDisplay)
+showSignals = input.bool(true, "Show Final Signals", group=gDisplay)
+showDashboard = input.bool(true, "Show Dashboard", group=gDisplay)
+showBackground = input.bool(false, "Show Engine Bias Background", group=gDisplay)
 
 //────────────────────────────────────
-// SMART CONFIRMATION SETTINGS
+// FOUNDATION: NON-REPAINTING GAUSSIAN KERNEL
 //────────────────────────────────────
-
-enableSmartConfirmation = input.bool(
-     true,
-     "Enable Smart Confirmation",
-     tooltip="Requires directional candle strength before accepting the BB200 re-entry signal.",
-     group="Smart Confirmation"
-)
-
-confirmationMode = input.string(
-     "Break Previous High/Low",
-     "Confirmation Strength",
-     options=["Candle Direction Only", "Break Previous High/Low"],
-     group="Smart Confirmation"
-)
-
-//────────────────────────────────────
-// TRADE SETTINGS
-//────────────────────────────────────
-
-enableLong = input.bool(true, "Enable Long Trades", group="Trades")
-enableShort = input.bool(true, "Enable Short Trades", group="Trades")
-closeOppositeTrade = input.bool(true, "Close Opposite Trade", group="Trades")
-
-stopLossPercent = input.float(
-     1.0,
-     "Stop-Loss %",
-     minval=0.0,
-     step=0.1,
-     group="Trades"
-)
-
-takeProfitPercent = input.float(
-     2.0,
-     "Take-Profit %",
-     minval=0.0,
-     step=0.1,
-     group="Trades"
-)
-
-enableTrailingStop = input.bool(false, "Enable Trailing Stop", group="Trades")
-
-trailingStartPercent = input.float(
-     1.0,
-     "Trailing Activation Profit %",
-     minval=0.1,
-     step=0.1,
-     group="Trades"
-)
-
-trailingDistancePercent = input.float(
-     0.5,
-     "Trailing Distance %",
-     minval=0.1,
-     step=0.1,
-     group="Trades"
-)
-
-//────────────────────────────────────
-// DISPLAY SETTINGS
-//────────────────────────────────────
-
-showKernel = input.bool(true, "Show Kernel Line", group="Display")
-showRawSignals = input.bool(true, "Show Raw Kernel Signals", group="Display")
-showSetupSignals = input.bool(true, "Show Outside-Band Setups", group="Display")
-showBands = input.bool(true, "Show Bollinger Bands", group="Display")
-showGenuineSignals = input.bool(true, "Show Confirmed Signals", group="Display")
-
-//────────────────────────────────────
-// GAUSSIAN KERNEL
-//────────────────────────────────────
-
 gaussianWeight(float distance, float width) =>
     math.exp(-(distance * distance) / (2.0 * width * width))
 
-//────────────────────────────────────
-// NON-REPAINTING KERNEL REGRESSION
-//────────────────────────────────────
-
 float weightedSum = 0.0
 float weightSum = 0.0
-
-for i = 0 to kernelLookback - 1
-    if not na(source[i])
-        float weight = gaussianWeight(i, bandwidth)
-        weightedSum += source[i] * weight
-        weightSum += weight
-
+for i = 0 to kLookback - 1
+    if not na(src[i])
+        float w = gaussianWeight(i, bandwidth)
+        weightedSum += src[i] * w
+        weightSum += w
 kernel = weightSum > 0 ? weightedSum / weightSum : na
-
-//────────────────────────────────────
-// KERNEL DIRECTION
-//────────────────────────────────────
-
-kernelRising = kernel > kernel[signalSensitivity]
-kernelFalling = kernel < kernel[signalSensitivity]
-
-rawBuySignal = kernelRising and not kernelRising[1]
-rawSellSignal = kernelFalling and not kernelFalling[1]
-
-//────────────────────────────────────
-// BOLLINGER BANDS 200
-//────────────────────────────────────
+kernelRising = kernel > kernel[kConfirm]
+kernelFalling = kernel < kernel[kConfirm]
+kernelBuyTurn = kernelRising and not kernelRising[1]
+kernelSellTurn = kernelFalling and not kernelFalling[1]
 
 bbBasis = ta.sma(close, bbLength)
-bbDeviation = ta.stdev(close, bbLength) * bbMultiplier
-bbUpper = bbBasis + bbDeviation
-bbLower = bbBasis - bbDeviation
-
-//────────────────────────────────────
-// OUTSIDE-BAND TESTS
-//────────────────────────────────────
+bbDev = ta.stdev(close, bbLength) * bbMult
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+atr = ta.atr(atrLen)
+atrPct = close != 0 ? atr / close * 100 : 0.0
 
 buyOutside = outsideMode == "Touch Outside" ? low < bbLower : close < bbLower
 sellOutside = outsideMode == "Touch Outside" ? high > bbUpper : close > bbUpper
+buyOvershoot = math.max(bbLower - low, 0.0)
+sellOvershoot = math.max(high - bbUpper, 0.0)
+buyOvershootOK = atr > 0 ? buyOvershoot / atr >= minOutsideATR : false
+sellOvershootOK = atr > 0 ? sellOvershoot / atr >= minOutsideATR : false
 
-outsideBuySetup = rawBuySignal and buyOutside
-outsideSellSetup = rawSellSignal and sellOutside
-
-//────────────────────────────────────
-// STORE SETUPS
-//────────────────────────────────────
+rawBuySetup = buyOutside and buyOvershootOK and (requireKernelTurn ? kernelBuyTurn : kernelRising)
+rawSellSetup = sellOutside and sellOvershootOK and (requireKernelTurn ? kernelSellTurn : kernelFalling)
 
 var bool pendingBuy = false
 var bool pendingSell = false
 var int buySetupBar = na
 var int sellSetupBar = na
 
-if outsideBuySetup
+if rawBuySetup
     pendingBuy := true
+    pendingSell := false
     buySetupBar := bar_index
-    pendingSell := false
     sellSetupBar := na
-
-if outsideSellSetup
+if rawSellSetup
     pendingSell := true
+    pendingBuy := false
     sellSetupBar := bar_index
-    pendingBuy := false
     buySetupBar := na
 
-//────────────────────────────────────
-// EXPIRE OLD SETUPS
-//────────────────────────────────────
-
-if pendingBuy and not na(buySetupBar) and bar_index - buySetupBar > maximumWaitBars
+if pendingBuy and not na(buySetupBar) and bar_index - buySetupBar > maxWait
     pendingBuy := false
     buySetupBar := na
-
-if pendingSell and not na(sellSetupBar) and bar_index - sellSetupBar > maximumWaitBars
+if pendingSell and not na(sellSetupBar) and bar_index - sellSetupBar > maxWait
     pendingSell := false
     sellSetupBar := na
 
-//────────────────────────────────────
-// PRICE BACK INSIDE BB200
-//────────────────────────────────────
-
+buyTimingOK = pendingBuy and not na(buySetupBar) and (allowSameBar ? bar_index >= buySetupBar : bar_index > buySetupBar)
+sellTimingOK = pendingSell and not na(sellSetupBar) and (allowSameBar ? bar_index >= sellSetupBar : bar_index > sellSetupBar)
 buyBackInside = close > bbLower and close <= bbUpper
 sellBackInside = close < bbUpper and close >= bbLower
-
-buyTimingAllowed = not na(buySetupBar) and (allowSameCandleReentry ? bar_index >= buySetupBar : bar_index > buySetupBar)
-sellTimingAllowed = not na(sellSetupBar) and (allowSameCandleReentry ? bar_index >= sellSetupBar : bar_index > sellSetupBar)
-
-//────────────────────────────────────
-// SMART CANDLE CONFIRMATION
-//────────────────────────────────────
-
-bullishCandle = close > open
-bearishCandle = close < open
-
-bullishBreak = bullishCandle and close > high[1]
-bearishBreak = bearishCandle and close < low[1]
-
-bullishConfirmation =
-     not enableSmartConfirmation ? true :
-     confirmationMode == "Candle Direction Only" ? bullishCandle : bullishBreak
-
-bearishConfirmation =
-     not enableSmartConfirmation ? true :
-     confirmationMode == "Candle Direction Only" ? bearishCandle : bearishBreak
+baseBuy = buyTimingOK and buyBackInside
+baseSell = sellTimingOK and sellBackInside
 
 //────────────────────────────────────
-// CONFIRMED SIGNALS
+// ENGINE 1: TREND
 //────────────────────────────────────
+emaFast = ta.ema(close, fastLen)
+emaSlow = ta.ema(close, slowLen)
+emaTrend = ta.ema(close, trendLen)
+trendBull = emaFast > emaSlow and emaSlow > emaTrend and emaFast > emaFast[1] and (not useMajorTrend or close > emaTrend)
+trendBear = emaFast < emaSlow and emaSlow < emaTrend and emaFast < emaFast[1] and (not useMajorTrend or close < emaTrend)
+trendBuyScore = trendBull ? trendWeight : 0
+trendSellScore = trendBear ? trendWeight : 0
 
-confirmedBuy =
-     pendingBuy and
-     buyTimingAllowed and
-     buyBackInside and
-     bullishConfirmation
+//────────────────────────────────────
+// ENGINE 2: MOMENTUM
+//────────────────────────────────────
+rsi = ta.rsi(close, rsiLen)
+hhWR = ta.highest(high, wrLen)
+llWR = ta.lowest(low, wrLen)
+wrRange = hhWR - llWR
+williamsR = wrRange != 0 ? -100 * (hhWR - close) / wrRange : -50
+wrBuyRecovery = ta.crossover(williamsR, wrBuyLevel) or williamsR > wrBuyLevel
+wrSellRecovery = ta.crossunder(williamsR, wrSellLevel) or williamsR < wrSellLevel
+momentumBull = rsi >= rsiBull and rsi > rsi[1] and wrBuyRecovery
+momentumBear = rsi <= rsiBear and rsi < rsi[1] and wrSellRecovery
+momentumBuyScore = momentumBull ? momentumWeight : 0
+momentumSellScore = momentumBear ? momentumWeight : 0
 
-confirmedSell =
-     pendingSell and
-     sellTimingAllowed and
-     sellBackInside and
-     bearishConfirmation
+//────────────────────────────────────
+// ENGINE 3: MARKET STRUCTURE
+//────────────────────────────────────
+bullCandle = close > open
+bearCandle = close < open
+breakPrevHigh = close > high[1]
+breakPrevLow = close < low[1]
+higherLow = low > ta.lowest(low[1], structureLen)
+lowerHigh = high < ta.highest(high[1], structureLen)
+structureBull = (not requireCandleDirection or bullCandle) and (not requireBreak or breakPrevHigh) and higherLow
+structureBear = (not requireCandleDirection or bearCandle) and (not requireBreak or breakPrevLow) and lowerHigh
+structureBuyScore = structureBull ? structureWeight : 0
+structureSellScore = structureBear ? structureWeight : 0
 
-if confirmedBuy
+//────────────────────────────────────
+// ENGINE 4: EXHAUSTION / RE-ENTRY
+//────────────────────────────────────
+exhaustionBull = baseBuy and kernelRising and low <= bbLower
+exhaustionBear = baseSell and kernelFalling and high >= bbUpper
+// Re-entry may happen after the outside candle, so preserve setup validity too.
+exhaustionBull := baseBuy and kernelRising
+exhaustionBear := baseSell and kernelFalling
+exhaustionBuyScore = exhaustionBull ? exhaustionWeight : 0
+exhaustionSellScore = exhaustionBear ? exhaustionWeight : 0
+
+//────────────────────────────────────
+// ENGINE 5: AI PROBABILITY
+//────────────────────────────────────
+volatilityOK = atrPct >= minAtrPercent and atrPct <= maxAtrPercent
+volBuyScore = volatilityOK ? volWeight : 0
+volSellScore = volatilityOK ? volWeight : 0
+totalWeight = math.max(trendWeight + momentumWeight + structureWeight + exhaustionWeight + volWeight, 1)
+buyPoints = trendBuyScore + momentumBuyScore + structureBuyScore + exhaustionBuyScore + volBuyScore
+sellPoints = trendSellScore + momentumSellScore + structureSellScore + exhaustionSellScore + volSellScore
+buyScore = math.round(100.0 * buyPoints / totalWeight)
+sellScore = math.round(100.0 * sellPoints / totalWeight)
+allBuyEngines = trendBull and momentumBull and structureBull and exhaustionBull and volatilityOK
+allSellEngines = trendBear and momentumBear and structureBear and exhaustionBear and volatilityOK
+buyApproved = baseBuy and buyScore >= minimumScore and (not strictMode or allBuyEngines)
+sellApproved = baseSell and sellScore >= minimumScore and (not strictMode or allSellEngines)
+
+//────────────────────────────────────
+// DUPLICATE PREVENTION / COOLDOWN
+//────────────────────────────────────
+var int lastSignalBar = na
+var int lastDirection = 0
+cooldownOK = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
+finalBuy = buyApproved and cooldownOK and lastDirection != 1
+finalSell = sellApproved and cooldownOK and lastDirection != -1
+
+if finalBuy
+    lastSignalBar := bar_index
+    lastDirection := 1
     pendingBuy := false
     buySetupBar := na
-
-if confirmedSell
+if finalSell
+    lastSignalBar := bar_index
+    lastDirection := -1
     pendingSell := false
     sellSetupBar := na
 
 //────────────────────────────────────
-// STRATEGY ENTRIES
+// STRATEGY ORDERS
 //────────────────────────────────────
-
-if confirmedBuy and enableLong
-    if closeOppositeTrade
+if finalBuy and enableLong
+    if closeOpposite
         strategy.close("Short", comment="Close Short")
-    strategy.entry("Long", strategy.long, comment="Confirmed BUY")
-
-if confirmedSell and enableShort
-    if closeOppositeTrade
+    strategy.entry("Long", strategy.long, comment="5E BUY")
+if finalSell and enableShort
+    if closeOpposite
         strategy.close("Long", comment="Close Long")
-    strategy.entry("Short", strategy.short, comment="Confirmed SELL")
+    strategy.entry("Short", strategy.short, comment="5E SELL")
 
-//────────────────────────────────────
-// FIXED SL AND TP
-//────────────────────────────────────
-
-longStopPrice = strategy.position_avg_price * (1.0 - stopLossPercent / 100.0)
-longTakeProfitPrice = strategy.position_avg_price * (1.0 + takeProfitPercent / 100.0)
-shortStopPrice = strategy.position_avg_price * (1.0 + stopLossPercent / 100.0)
-shortTakeProfitPrice = strategy.position_avg_price * (1.0 - takeProfitPercent / 100.0)
-
-//────────────────────────────────────
-// TRAILING STOP CALCULATION
-//────────────────────────────────────
-
-longTrailingActivation = strategy.position_avg_price * (1.0 + trailingStartPercent / 100.0)
-shortTrailingActivation = strategy.position_avg_price * (1.0 - trailingStartPercent / 100.0)
-
-trailingOffsetTicks = math.max(
-     1,
-     math.round(close * trailingDistancePercent / 100.0 / syminfo.mintick)
-)
-
-//────────────────────────────────────
-// EXIT ORDERS
-//────────────────────────────────────
+longSL = strategy.position_avg_price * (1 - stopLossPct / 100)
+longTP = strategy.position_avg_price * (1 + takeProfitPct / 100)
+shortSL = strategy.position_avg_price * (1 + stopLossPct / 100)
+shortTP = strategy.position_avg_price * (1 - takeProfitPct / 100)
+trailTicks = math.max(1, math.round(close * trailDistancePct / 100 / syminfo.mintick))
+longTrailActivation = strategy.position_avg_price * (1 + trailActivatePct / 100)
+shortTrailActivation = strategy.position_avg_price * (1 - trailActivatePct / 100)
 
 if strategy.position_size > 0
-    if enableTrailingStop
-        strategy.exit(
-             "Long Exit",
-             from_entry="Long",
-             stop=stopLossPercent > 0 ? longStopPrice : na,
-             limit=takeProfitPercent > 0 ? longTakeProfitPrice : na,
-             trail_price=longTrailingActivation,
-             trail_offset=trailingOffsetTicks
-        )
-    else
-        strategy.exit(
-             "Long Exit",
-             from_entry="Long",
-             stop=stopLossPercent > 0 ? longStopPrice : na,
-             limit=takeProfitPercent > 0 ? longTakeProfitPrice : na
-        )
-
+    strategy.exit("Long Exit", "Long", stop=stopLossPct > 0 ? longSL : na, limit=takeProfitPct > 0 ? longTP : na, trail_price=useTrailing ? longTrailActivation : na, trail_offset=useTrailing ? trailTicks : na)
 if strategy.position_size < 0
-    if enableTrailingStop
-        strategy.exit(
-             "Short Exit",
-             from_entry="Short",
-             stop=stopLossPercent > 0 ? shortStopPrice : na,
-             limit=takeProfitPercent > 0 ? shortTakeProfitPrice : na,
-             trail_price=shortTrailingActivation,
-             trail_offset=trailingOffsetTicks
-        )
-    else
-        strategy.exit(
-             "Short Exit",
-             from_entry="Short",
-             stop=stopLossPercent > 0 ? shortStopPrice : na,
-             limit=takeProfitPercent > 0 ? shortTakeProfitPrice : na
-        )
+    strategy.exit("Short Exit", "Short", stop=stopLossPct > 0 ? shortSL : na, limit=takeProfitPct > 0 ? shortTP : na, trail_price=useTrailing ? shortTrailActivation : na, trail_offset=useTrailing ? trailTicks : na)
 
 //────────────────────────────────────
-// KERNEL PLOT
+// PLOTS
 //────────────────────────────────────
+kColor = kernelRising ? color.lime : kernelFalling ? color.red : color.gray
+plot(showKernel ? kernel : na, "Kernel", kColor, 3)
+basisPlot = plot(showBands ? bbBasis : na, "BB200 Basis", color.yellow)
+upperPlot = plot(showBands ? bbUpper : na, "BB200 Upper", color.blue, 2)
+lowerPlot = plot(showBands ? bbLower : na, "BB200 Lower", color.blue, 2)
+fill(upperPlot, lowerPlot, color=color.new(color.blue, 92), title="BB200 Area")
+plot(showEMAs ? emaFast : na, "Fast EMA", color.aqua)
+plot(showEMAs ? emaSlow : na, "Slow EMA", color.orange)
+plot(showEMAs ? emaTrend : na, "Major EMA", color.fuchsia, 2)
 
-kernelColor = kernelRising ? color.lime : kernelFalling ? color.red : color.gray
+plotshape(showSetups and rawBuySetup, "BUY Setup", shape.circle, location.belowbar, color.new(color.lime, 30), size=size.tiny, text="S")
+plotshape(showSetups and rawSellSetup, "SELL Setup", shape.circle, location.abovebar, color.new(color.red, 30), size=size.tiny, text="S")
+plotshape(showSignals and finalBuy, "Five Engine BUY", shape.labelup, location.belowbar, color.lime, textcolor=color.black, size=size.small, text="BUY\n" + str.tostring(buyScore) + "%")
+plotshape(showSignals and finalSell, "Five Engine SELL", shape.labeldown, location.abovebar, color.red, textcolor=color.white, size=size.small, text="SELL\n" + str.tostring(sellScore) + "%")
 
-plot(
-     showKernel ? kernel : na,
-     title="Kernel Regression",
-     color=kernelColor,
-     linewidth=3
-)
-
-//────────────────────────────────────
-// BOLLINGER BAND PLOTS
-//────────────────────────────────────
-
-basisPlot = plot(
-     showBands ? bbBasis : na,
-     title="BB200 Basis",
-     color=color.yellow,
-     linewidth=1
-)
-
-upperPlot = plot(
-     showBands ? bbUpper : na,
-     title="BB200 Upper",
-     color=color.blue,
-     linewidth=2
-)
-
-lowerPlot = plot(
-     showBands ? bbLower : na,
-     title="BB200 Lower",
-     color=color.blue,
-     linewidth=2
-)
-
-fill(
-     upperPlot,
-     lowerPlot,
-     title="BB200 Area",
-     color=color.new(color.blue, 92)
-)
+bias = buyScore > sellScore ? 1 : sellScore > buyScore ? -1 : 0
+bgcolor(showBackground ? bias == 1 ? color.new(color.green, 93) : bias == -1 ? color.new(color.red, 93) : na : na)
 
 //────────────────────────────────────
-// RAW KERNEL SIGNALS
+// DASHBOARD
 //────────────────────────────────────
-
-plotshape(
-     showRawSignals and rawBuySignal,
-     title="Raw Kernel BUY",
-     text="K",
-     style=shape.circle,
-     location=location.belowbar,
-     color=color.new(color.green, 20),
-     textcolor=color.white,
-     size=size.tiny
-)
-
-plotshape(
-     showRawSignals and rawSellSignal,
-     title="Raw Kernel SELL",
-     text="K",
-     style=shape.circle,
-     location=location.abovebar,
-     color=color.new(color.red, 20),
-     textcolor=color.white,
-     size=size.tiny
-)
-
-//────────────────────────────────────
-// OUTSIDE-BAND SETUPS
-//────────────────────────────────────
-
-plotshape(
-     showSetupSignals and outsideBuySetup,
-     title="Outside BUY Setup",
-     text="BUY\nSETUP",
-     style=shape.triangleup,
-     location=location.belowbar,
-     color=color.aqua,
-     textcolor=color.black,
-     size=size.small
-)
-
-plotshape(
-     showSetupSignals and outsideSellSetup,
-     title="Outside SELL Setup",
-     text="SELL\nSETUP",
-     style=shape.triangledown,
-     location=location.abovebar,
-     color=color.orange,
-     textcolor=color.black,
-     size=size.small
-)
-
-//────────────────────────────────────
-// CONFIRMED SIGNALS
-//────────────────────────────────────
-
-plotshape(
-     showGenuineSignals and confirmedBuy,
-     title="Confirmed BUY",
-     text="CONFIRMED\nBUY",
-     style=shape.labelup,
-     location=location.belowbar,
-     color=color.green,
-     textcolor=color.white,
-     size=size.normal
-)
-
-plotshape(
-     showGenuineSignals and confirmedSell,
-     title="Confirmed SELL",
-     text="CONFIRMED\nSELL",
-     style=shape.labeldown,
-     location=location.abovebar,
-     color=color.red,
-     textcolor=color.white,
-     size=size.normal
-)
-
-barcolor(confirmedBuy ? color.lime : confirmedSell ? color.red : na)
+var table dash = table.new(position.top_right, 3, 8, border_width=1)
+statusText(bool bull, bool bear) => bull ? "BULL" : bear ? "BEAR" : "NEUTRAL"
+statusColor(bool bull, bool bear) => bull ? color.lime : bear ? color.red : color.silver
+if barstate.islast and showDashboard
+    table.cell(dash, 0, 0, "MKR AI X1", bgcolor=color.black, text_color=color.white)
+    table.cell(dash, 1, 0, "BUY", bgcolor=color.new(color.green, 55), text_color=color.white)
+    table.cell(dash, 2, 0, "SELL", bgcolor=color.new(color.red, 55), text_color=color.white)
+    table.cell(dash, 0, 1, "AI Score")
+    table.cell(dash, 1, 1, str.tostring(buyScore) + "%", text_color=buyScore >= minimumScore ? color.lime : color.silver)
+    table.cell(dash, 2, 1, str.tostring(sellScore) + "%", text_color=sellScore >= minimumScore ? color.red : color.silver)
+    table.cell(dash, 0, 2, "Trend")
+    table.cell(dash, 1, 2, trendBull ? "PASS" : "FAIL", text_color=trendBull ? color.lime : color.gray)
+    table.cell(dash, 2, 2, trendBear ? "PASS" : "FAIL", text_color=trendBear ? color.red : color.gray)
+    table.cell(dash, 0, 3, "Momentum")
+    table.cell(dash, 1, 3, momentumBull ? "PASS" : "FAIL", text_color=momentumBull ? color.lime : color.gray)
+    table.cell(dash, 2, 3, momentumBear ? "PASS" : "FAIL", text_color=momentumBear ? color.red : color.gray)
+    table.cell(dash, 0, 4, "Structure")
+    table.cell(dash, 1, 4, structureBull ? "PASS" : "FAIL", text_color=structureBull ? color.lime : color.gray)
+    table.cell(dash, 2, 4, structureBear ? "PASS" : "FAIL", text_color=structureBear ? color.red : color.gray)
+    table.cell(dash, 0, 5, "Exhaustion")
+    table.cell(dash, 1, 5, exhaustionBull ? "PASS" : "WAIT", text_color=exhaustionBull ? color.lime : color.gray)
+    table.cell(dash, 2, 5, exhaustionBear ? "PASS" : "WAIT", text_color=exhaustionBear ? color.red : color.gray)
+    table.cell(dash, 0, 6, "Volatility")
+    table.cell(dash, 1, 6, str.tostring(atrPct, "#.##") + "%", text_color=volatilityOK ? color.lime : color.orange)
+    table.cell(dash, 2, 6, volatilityOK ? "PASS" : "BLOCK", text_color=volatilityOK ? color.lime : color.orange)
+    table.cell(dash, 0, 7, "Bias")
+    table.cell(dash, 1, 7, statusText(bias == 1, bias == -1), text_color=statusColor(bias == 1, bias == -1))
+    table.cell(dash, 2, 7, strictMode ? "STRICT" : "SCORE", text_color=color.yellow)
 
 //────────────────────────────────────
 // ALERTS
 //────────────────────────────────────
-
-alertcondition(
-     confirmedBuy,
-     title="MKR AI Precision X1 BUY",
-     message="Confirmed BUY: bullish kernel setup occurred outside the lower BB200, price returned inside, and bullish candle confirmation passed."
-)
-
-alertcondition(
-     confirmedSell,
-     title="MKR AI Precision X1 SELL",
-     message="Confirmed SELL: bearish kernel setup occurred outside the upper BB200, price returned inside, and bearish candle confirmation passed."
-)
+alertcondition(rawBuySetup, "MKR BUY Setup", "MKR AI X1: BUY setup detected outside BB200")
+alertcondition(rawSellSetup, "MKR SELL Setup", "MKR AI X1: SELL setup detected outside BB200")
+alertcondition(finalBuy, "MKR Five Engine BUY", "MKR AI X1: Five-engine BUY confirmed")
+alertcondition(finalSell, "MKR Five Engine SELL", "MKR AI X1: Five-engine SELL confirmed")
