@@ -1,7 +1,7 @@
 //@version=6
-strategy("MKR AI Precision X2.2 - Staged Reversal Strategy", shorttitle="MKR AI X2.2", overlay=true, pyramiding=0, process_orders_on_close=true, max_bars_back=1500, max_labels_count=500, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+strategy("MKR AI Precision X2.3 - Trend Protected Reversal", shorttitle="MKR AI X2.3", overlay=true, pyramiding=0, process_orders_on_close=true, max_bars_back=1500, max_labels_count=500, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
 
-// 1. FOUNDATION
+// INPUTS
 g1 = "1. BB200 + Kernel"
 src = input.source(close, "Kernel Source", group=g1)
 bandwidth = input.float(8.0, "Kernel Bandwidth", minval=1.0, step=0.5, group=g1)
@@ -12,115 +12,117 @@ bbMult = input.float(2.0, "BB Deviation", minval=0.1, step=0.1, group=g1)
 extremeMode = input.string("Close Outside", "Extreme Requirement", options=["Close Outside", "Touch Outside"], group=g1)
 minOvershootATR = input.float(0.05, "Minimum Overshoot in ATR", minval=0.0, step=0.05, group=g1)
 setupExpiry = input.int(20, "Setup Expiry Bars", minval=1, maxval=100, group=g1)
+excursionResetATR = input.float(0.10, "Excursion Reset Distance in ATR", minval=0.0, step=0.05, group=g1)
 
-// 2. EXHAUSTION
 g2 = "2. Exhaustion"
 rsiLen = input.int(14, "RSI Length", minval=2, group=g2)
 wrLen = input.int(14, "Williams %R Length", minval=2, group=g2)
-wickRatio = input.float(1.2, "Minimum Wick / Body", minval=0.0, step=0.1, group=g2)
-requireKernel = input.bool(true, "Require Kernel Direction", group=g2)
-requireMomentum = input.bool(false, "Require Momentum Turn", group=g2)
-requireRejection = input.bool(false, "Require Rejection Candle", group=g2)
+wickRatio = input.float(1.2, "Minimum Rejection Wick / Body", minval=0.0, step=0.1, group=g2)
+requireKernelTurn = input.bool(true, "Require Kernel Direction", group=g2)
+requireMomentumTurn = input.bool(false, "Require Momentum Turn", group=g2)
+requireRejectionCandle = input.bool(false, "Require Rejection Candle", group=g2)
 
-// 3. CONFIRMATION
-g3 = "3. Confirmation"
-requireDirection = input.bool(true, "Require Directional Candle", group=g3)
-requireBreak = input.bool(true, "Require Previous Candle Break", group=g3)
-useVolume = input.bool(false, "Use Volume Filter", group=g3)
-volLen = input.int(20, "Volume Average Length", minval=2, group=g3)
-volMult = input.float(1.0, "Volume Multiplier", minval=0.1, step=0.1, group=g3)
-useEMA = input.bool(false, "Use EMA200 Bias", group=g3)
-emaLen = input.int(200, "EMA Length", minval=20, group=g3)
-atrLen = input.int(14, "ATR Length", minval=2, group=g3)
-minAtrPct = input.float(0.08, "Minimum ATR %", minval=0.0, step=0.01, group=g3)
-maxAtrPct = input.float(5.0, "Maximum ATR %", minval=0.1, step=0.1, group=g3)
+g3 = "3. Confirmation + Trend Guard"
+triggerMode = input.string("Early", "Entry Trigger Mode", options=["Early", "Confirmed"], group=g3)
+requireDirectionalClose = input.bool(true, "Require Directional Candle", group=g3)
+confirmBreak = input.bool(true, "Confirmed Mode: Break Previous Candle", group=g3)
 maxConfirmBars = input.int(8, "Maximum Confirmation Wait", minval=1, maxval=50, group=g3)
+useVolumeFilter = input.bool(false, "Use Volume Filter", group=g3)
+volumeLength = input.int(20, "Volume Average Length", minval=2, group=g3)
+volumeMultiplier = input.float(1.0, "Minimum Volume Multiplier", minval=0.1, step=0.1, group=g3)
+emaLength = input.int(200, "EMA Trend Length", minval=20, group=g3)
+useTrendProtection = input.bool(true, "Block Counter-Trend Signals", group=g3)
+trendSlopeBars = input.int(5, "EMA Slope Bars", minval=1, maxval=20, group=g3)
+adxLength = input.int(14, "ADX DI Length", minval=2, group=g3)
+adxSmoothing = input.int(14, "ADX Smoothing", minval=2, group=g3)
+strongTrendADX = input.float(22.0, "Strong Trend ADX", minval=5.0, step=1.0, group=g3)
+atrLen = input.int(14, "ATR Length", minval=2, group=g3)
+minAtrPercent = input.float(0.08, "Minimum ATR %", minval=0.0, step=0.01, group=g3)
+maxAtrPercent = input.float(5.0, "Maximum ATR %", minval=0.1, step=0.1, group=g3)
 
-// 4. TRIGGER
-g4 = "4. Trigger"
+g4 = "4. Trigger Control"
 minimumScore = input.int(70, "Minimum Score", minval=0, maxval=100, group=g4)
-cooldownBars = input.int(8, "Cooldown Bars", minval=0, maxval=200, group=g4)
-allowSameBar = input.bool(false, "Allow Same-Bar Entry", group=g4)
+cooldownBars = input.int(8, "Signal Cooldown Bars", minval=0, maxval=200, group=g4)
+allowSameBarEntry = input.bool(false, "Allow Same-Bar Entry", group=g4)
 
-// 5. RISK
-g5 = "5. Risk Management"
+g5 = "5. Risk"
 enableLong = input.bool(true, "Enable Long", group=g5)
 enableShort = input.bool(true, "Enable Short", group=g5)
 closeOpposite = input.bool(true, "Close Opposite Position", group=g5)
 stopLossPct = input.float(0.8, "Stop Loss %", minval=0.0, step=0.1, group=g5)
 takeProfitPct = input.float(1.6, "Take Profit %", minval=0.0, step=0.1, group=g5)
-useTrailing = input.bool(false, "Enable Trailing Stop", group=g5)
-trailActivatePct = input.float(0.8, "Trail Activation %", minval=0.1, step=0.1, group=g5)
-trailDistancePct = input.float(0.4, "Trail Distance %", minval=0.1, step=0.1, group=g5)
 
-// 6. DISPLAY
 g6 = "6. Display"
 showKernel = input.bool(true, "Show Kernel", group=g6)
 showBands = input.bool(true, "Show BB200", group=g6)
 showEMA = input.bool(true, "Show EMA200", group=g6)
-showStages = input.bool(true, "Show Stage Markers", group=g6)
-showSignals = input.bool(true, "Show BUY/SELL", group=g6)
+showSetupDots = input.bool(true, "Show Setup Dots", group=g6)
+showInternalMarkers = input.bool(false, "Show Internal Stage Markers", group=g6)
+showSignals = input.bool(true, "Show BUY/SELL Labels", group=g6)
 showDashboard = input.bool(true, "Show Dashboard", group=g6)
 
-// NON-REPAINTING GAUSSIAN KERNEL
-gaussian(float d, float w) => math.exp(-(d * d) / (2.0 * w * w))
-float sum = 0.0
-float weights = 0.0
+// FOUNDATION
+gaussianWeight(float distance, float width) => math.exp(-(distance * distance) / (2.0 * width * width))
+float weightedSum = 0.0
+float weightSum = 0.0
 for i = 0 to kLookback - 1
     if not na(src[i])
-        float wt = gaussian(i, bandwidth)
-        sum += src[i] * wt
-        weights += wt
-kernel = weights > 0 ? sum / weights : na
-kernelUp = kernel > kernel[kConfirm]
-kernelDown = kernel < kernel[kConfirm]
+        float w = gaussianWeight(i, bandwidth)
+        weightedSum += src[i] * w
+        weightSum += w
+kernel = weightSum > 0 ? weightedSum / weightSum : na
+kernelRising = kernel > kernel[kConfirm]
+kernelFalling = kernel < kernel[kConfirm]
+kernelBuyTurn = kernelRising and not kernelRising[1]
+kernelSellTurn = kernelFalling and not kernelFalling[1]
 
-// BB200, EMA, ATR, MOMENTUM
-basis = ta.sma(close, bbLength)
-dev = ta.stdev(close, bbLength) * bbMult
-upper = basis + dev
-lower = basis - dev
-ema200 = ta.ema(close, emaLen)
+bbBasis = ta.sma(close, bbLength)
+bbDev = ta.stdev(close, bbLength) * bbMult
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+emaBias = ta.ema(close, emaLength)
 atr = ta.atr(atrLen)
 atrPct = close != 0 ? atr / close * 100.0 : 0.0
-atrOK = atrPct >= minAtrPct and atrPct <= maxAtrPct
-volAvg = ta.sma(volume, volLen)
-volOK = not useVolume or volume >= volAvg * volMult
-rsi = ta.rsi(close, rsiLen)
-wrHigh = ta.highest(high, wrLen)
-wrLow = ta.lowest(low, wrLen)
-wrRange = wrHigh - wrLow
-wr = wrRange != 0 ? -100.0 * (wrHigh - close) / wrRange : -50.0
-buyMomentum = rsi > rsi[1] and wr > wr[1]
-sellMomentum = rsi < rsi[1] and wr < wr[1]
+volatilityOK = atrPct >= minAtrPercent and atrPct <= maxAtrPercent
+volumeAvg = ta.sma(volume, volumeLength)
+volumeOK = not useVolumeFilter or volume >= volumeAvg * volumeMultiplier
+[diPlus, diMinus, adxValue] = ta.dmi(adxLength, adxSmoothing)
+emaSlopeUp = emaBias > emaBias[trendSlopeBars]
+emaSlopeDown = emaBias < emaBias[trendSlopeBars]
+strongBullTrend = adxValue >= strongTrendADX and diPlus > diMinus and close > emaBias and emaSlopeUp and kernelRising
+strongBearTrend = adxValue >= strongTrendADX and diMinus > diPlus and close < emaBias and emaSlopeDown and kernelFalling
+buyTrendOK = not useTrendProtection or not strongBearTrend
+sellTrendOK = not useTrendProtection or not strongBullTrend
 
-// CANDLE STRUCTURE
-body = math.max(math.abs(close - open), syminfo.mintick)
-upperWick = high - math.max(open, close)
-lowerWick = math.min(open, close) - low
-bullReject = lowerWick / body >= wickRatio and close >= open
-bearReject = upperWick / body >= wickRatio and close <= open
+// STAGE 1: ONE SETUP PER BB EXCURSION
+buyOutside = extremeMode == "Close Outside" ? close < bbLower : low < bbLower
+sellOutside = extremeMode == "Close Outside" ? close > bbUpper : high > bbUpper
+buyOvershootOK = atr > 0 ? math.max(bbLower - low, 0.0) / atr >= minOvershootATR : false
+sellOvershootOK = atr > 0 ? math.max(high - bbUpper, 0.0) / atr >= minOvershootATR : false
+rawBuyExtreme = buyOutside and buyOvershootOK
+rawSellExtreme = sellOutside and sellOvershootOK
+var bool buyExcursionLocked = false
+var bool sellExcursionLocked = false
+if not rawBuyExtreme and close > bbLower + atr * excursionResetATR
+    buyExcursionLocked := false
+if not rawSellExtreme and close < bbUpper - atr * excursionResetATR
+    sellExcursionLocked := false
+newBuyExtreme = rawBuyExtreme and not buyExcursionLocked
+newSellExtreme = rawSellExtreme and not sellExcursionLocked
+if newBuyExtreme
+    buyExcursionLocked := true
+if newSellExtreme
+    sellExcursionLocked := true
 
-// STAGE 1: EXTREME
-buyOutside = extremeMode == "Close Outside" ? close < lower : low < lower
-sellOutside = extremeMode == "Close Outside" ? close > upper : high > upper
-buyOver = math.max(lower - low, 0.0)
-sellOver = math.max(high - upper, 0.0)
-buyExtremeRaw = buyOutside and atr > 0 and buyOver / atr >= minOvershootATR
-sellExtremeRaw = sellOutside and atr > 0 and sellOver / atr >= minOvershootATR
-newBuyExtreme = buyExtremeRaw and not buyExtremeRaw[1]
-newSellExtreme = sellExtremeRaw and not sellExtremeRaw[1]
-
-// SETUP MEMORY
+// SETUP STATE
 var bool pendingBuy = false
 var bool pendingSell = false
 var bool buyExhausted = false
 var bool sellExhausted = false
 var int buySetupBar = na
 var int sellSetupBar = na
-var int buyExhaustBar = na
-var int sellExhaustBar = na
-var int lastSignalBar = na
+var int buyExhaustionBar = na
+var int sellExhaustionBar = na
 
 if newBuyExtreme
     pendingBuy := true
@@ -136,7 +138,6 @@ if newSellExtreme
     buyExhausted := false
     sellSetupBar := bar_index
     buySetupBar := na
-
 if pendingBuy and not na(buySetupBar) and bar_index - buySetupBar > setupExpiry
     pendingBuy := false
     buyExhausted := false
@@ -145,49 +146,69 @@ if pendingSell and not na(sellSetupBar) and bar_index - sellSetupBar > setupExpi
     sellExhausted := false
 
 // STAGE 2: EXHAUSTION
-buyKernelOK = not requireKernel or kernelUp
-sellKernelOK = not requireKernel or kernelDown
-buyMomentumOK = not requireMomentum or buyMomentum
-sellMomentumOK = not requireMomentum or sellMomentum
-buyRejectOK = not requireRejection or bullReject
-sellRejectOK = not requireRejection or bearReject
-buyExhaustNow = pendingBuy and buyKernelOK and buyMomentumOK and buyRejectOK
-sellExhaustNow = pendingSell and sellKernelOK and sellMomentumOK and sellRejectOK
-
-if buyExhaustNow and not buyExhausted
+bodySize = math.max(math.abs(close - open), syminfo.mintick)
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+bullishRejection = lowerWick / bodySize >= wickRatio and close >= open
+bearishRejection = upperWick / bodySize >= wickRatio and close <= open
+rsi = ta.rsi(close, rsiLen)
+wrHigh = ta.highest(high, wrLen)
+wrLow = ta.lowest(low, wrLen)
+williamsR = wrHigh != wrLow ? -100.0 * (wrHigh - close) / (wrHigh - wrLow) : -50.0
+buyMomentumTurn = rsi > rsi[1] and williamsR > williamsR[1]
+sellMomentumTurn = rsi < rsi[1] and williamsR < williamsR[1]
+buyKernelOK = not requireKernelTurn or kernelBuyTurn or kernelRising
+sellKernelOK = not requireKernelTurn or kernelSellTurn or kernelFalling
+buyMomentumOK = not requireMomentumTurn or buyMomentumTurn
+sellMomentumOK = not requireMomentumTurn or sellMomentumTurn
+buyRejectionOK = not requireRejectionCandle or bullishRejection
+sellRejectionOK = not requireRejectionCandle or bearishRejection
+buyExhaustionNow = pendingBuy and buyKernelOK and buyMomentumOK and buyRejectionOK
+sellExhaustionNow = pendingSell and sellKernelOK and sellMomentumOK and sellRejectionOK
+if buyExhaustionNow and not buyExhausted
     buyExhausted := true
-    buyExhaustBar := bar_index
-if sellExhaustNow and not sellExhausted
+    buyExhaustionBar := bar_index
+if sellExhaustionNow and not sellExhausted
     sellExhausted := true
-    sellExhaustBar := bar_index
-if buyExhausted and not na(buyExhaustBar) and bar_index - buyExhaustBar > maxConfirmBars
+    sellExhaustionBar := bar_index
+if buyExhausted and not na(buyExhaustionBar) and bar_index - buyExhaustionBar > maxConfirmBars
     pendingBuy := false
     buyExhausted := false
-if sellExhausted and not na(sellExhaustBar) and bar_index - sellExhaustBar > maxConfirmBars
+if sellExhausted and not na(sellExhaustionBar) and bar_index - sellExhaustionBar > maxConfirmBars
     pendingSell := false
     sellExhausted := false
 
-// STAGE 3: RE-ENTRY CONFIRMATION
-buyReentry = close > lower and close <= upper
-sellReentry = close < upper and close >= lower
-buyDirectionOK = not requireDirection or close > open
-sellDirectionOK = not requireDirection or close < open
-buyBreakOK = not requireBreak or close > high[1]
-sellBreakOK = not requireBreak or close < low[1]
-buyEMAOK = not useEMA or close > ema200
-sellEMAOK = not useEMA or close < ema200
-buySameBarOK = allowSameBar or na(buySetupBar) or bar_index > buySetupBar
-sellSameBarOK = allowSameBar or na(sellSetupBar) or bar_index > sellSetupBar
-buyConfirmed = pendingBuy and buyExhausted and buySameBarOK and buyReentry and buyDirectionOK and buyBreakOK and volOK and atrOK and buyEMAOK
-sellConfirmed = pendingSell and sellExhausted and sellSameBarOK and sellReentry and sellDirectionOK and sellBreakOK and volOK and atrOK and sellEMAOK
+// STAGE 3: ACTIVE-SETUP RE-ENTRY AND TRIGGER
+buyReentry = pendingBuy and close > bbLower and close <= bbUpper
+sellReentry = pendingSell and close < bbUpper and close >= bbLower
+bullCandle = close > open
+bearCandle = close < open
+buyDirectionalOK = not requireDirectionalClose or bullCandle
+sellDirectionalOK = not requireDirectionalClose or bearCandle
+buyBreakOK = not confirmBreak or close > high[1]
+sellBreakOK = not confirmBreak or close < low[1]
+buyEarlyTrigger = buyReentry and buyKernelOK and (buyMomentumTurn or bullishRejection)
+sellEarlyTrigger = sellReentry and sellKernelOK and (sellMomentumTurn or bearishRejection)
+buyTriggerOK = triggerMode == "Early" ? buyEarlyTrigger : buyReentry and buyBreakOK
+sellTriggerOK = triggerMode == "Early" ? sellEarlyTrigger : sellReentry and sellBreakOK
+sameBarBuyOK = allowSameBarEntry or na(buySetupBar) or bar_index > buySetupBar
+sameBarSellOK = allowSameBarEntry or na(sellSetupBar) or bar_index > sellSetupBar
+buyConfirmed = pendingBuy and buyExhausted and sameBarBuyOK and buyTriggerOK and buyDirectionalOK and volumeOK and volatilityOK and buyTrendOK
+sellConfirmed = pendingSell and sellExhausted and sameBarSellOK and sellTriggerOK and sellDirectionalOK and volumeOK and volatilityOK and sellTrendOK
 
-// WEIGHTED SCORE
-buyScore = (buyReentry ? 25 : 0) + (buyKernelOK ? 20 : 0) + (buyMomentum ? 15 : 0) + (bullReject ? 10 : 0) + (buyDirectionOK ? 10 : 0) + (buyBreakOK ? 10 : 0) + (atrOK ? 5 : 0) + (volOK ? 5 : 0)
-sellScore = (sellReentry ? 25 : 0) + (sellKernelOK ? 20 : 0) + (sellMomentum ? 15 : 0) + (bearReject ? 10 : 0) + (sellDirectionOK ? 10 : 0) + (sellBreakOK ? 10 : 0) + (atrOK ? 5 : 0) + (volOK ? 5 : 0)
+// SCORE ONLY ACTIVE SETUPS
+buyScoreRaw = (buyReentry ? 25 : 0) + (buyKernelOK ? 20 : 0) + (buyMomentumTurn ? 15 : 0) + (bullishRejection ? 10 : 0) + (buyDirectionalOK ? 10 : 0) + (buyTriggerOK ? 10 : 0) + (volatilityOK ? 5 : 0) + (buyTrendOK ? 5 : 0)
+sellScoreRaw = (sellReentry ? 25 : 0) + (sellKernelOK ? 20 : 0) + (sellMomentumTurn ? 15 : 0) + (bearishRejection ? 10 : 0) + (sellDirectionalOK ? 10 : 0) + (sellTriggerOK ? 10 : 0) + (volatilityOK ? 5 : 0) + (sellTrendOK ? 5 : 0)
+buyScore = pendingBuy ? buyScoreRaw : 0
+sellScore = pendingSell ? sellScoreRaw : 0
+buyApproved = buyConfirmed and buyScore >= minimumScore
+sellApproved = sellConfirmed and sellScore >= minimumScore
+
+// STAGE 4: ENTRY
+var int lastSignalBar = na
 cooldownOK = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
-finalBuy = buyConfirmed and buyScore >= minimumScore and cooldownOK and strategy.position_size <= 0
-finalSell = sellConfirmed and sellScore >= minimumScore and cooldownOK and strategy.position_size >= 0
-
+finalBuy = buyApproved and cooldownOK and strategy.position_size <= 0
+finalSell = sellApproved and cooldownOK and strategy.position_size >= 0
 if finalBuy
     lastSignalBar := bar_index
     pendingBuy := false
@@ -197,99 +218,72 @@ if finalSell
     pendingSell := false
     sellExhausted := false
 
-// ORDERS
 if finalBuy and enableLong
     if closeOpposite
-        strategy.close("Short")
-    strategy.entry("Long", strategy.long, comment="X2.2 BUY")
+        strategy.close("Short", comment="Close Short")
+    strategy.entry("Long", strategy.long, comment="X2.3 BUY")
 if finalSell and enableShort
     if closeOpposite
-        strategy.close("Long")
-    strategy.entry("Short", strategy.short, comment="X2.2 SELL")
+        strategy.close("Long", comment="Close Long")
+    strategy.entry("Short", strategy.short, comment="X2.3 SELL")
 
 longSL = strategy.position_avg_price * (1.0 - stopLossPct / 100.0)
 longTP = strategy.position_avg_price * (1.0 + takeProfitPct / 100.0)
 shortSL = strategy.position_avg_price * (1.0 + stopLossPct / 100.0)
 shortTP = strategy.position_avg_price * (1.0 - takeProfitPct / 100.0)
-trailTicks = math.max(1, math.round(close * trailDistancePct / 100.0 / syminfo.mintick))
-longActivation = strategy.position_avg_price * (1.0 + trailActivatePct / 100.0)
-shortActivation = strategy.position_avg_price * (1.0 - trailActivatePct / 100.0)
-if strategy.position_size > 0
-    if useTrailing
-        strategy.exit("Long Exit", "Long", stop=stopLossPct > 0 ? longSL : na, limit=takeProfitPct > 0 ? longTP : na, trail_price=longActivation, trail_offset=trailTicks)
-    else
-        strategy.exit("Long Exit", "Long", stop=stopLossPct > 0 ? longSL : na, limit=takeProfitPct > 0 ? longTP : na)
-if strategy.position_size < 0
-    if useTrailing
-        strategy.exit("Short Exit", "Short", stop=stopLossPct > 0 ? shortSL : na, limit=takeProfitPct > 0 ? shortTP : na, trail_price=shortActivation, trail_offset=trailTicks)
-    else
-        strategy.exit("Short Exit", "Short", stop=stopLossPct > 0 ? shortSL : na, limit=takeProfitPct > 0 ? shortTP : na)
+if strategy.position_size > 0 and (stopLossPct > 0 or takeProfitPct > 0)
+    strategy.exit("Long Exit", from_entry="Long", stop=stopLossPct > 0 ? longSL : na, limit=takeProfitPct > 0 ? longTP : na)
+if strategy.position_size < 0 and (stopLossPct > 0 or takeProfitPct > 0)
+    strategy.exit("Short Exit", from_entry="Short", stop=stopLossPct > 0 ? shortSL : na, limit=takeProfitPct > 0 ? shortTP : na)
 
 // VISUALS
-kernelColour = kernelUp ? color.lime : kernelDown ? color.red : color.gray
-plot(showKernel ? kernel : na, "Kernel", kernelColour, 3)
-bp = plot(showBands ? basis : na, "BB200 Basis", color.yellow)
-up = plot(showBands ? upper : na, "BB200 Upper", color.blue, 2)
-lp = plot(showBands ? lower : na, "BB200 Lower", color.blue, 2)
-fill(up, lp, color.new(color.blue, 92))
-plot(showEMA ? ema200 : na, "EMA200", color.fuchsia, 2)
-plotshape(showStages and newBuyExtreme, "BUY Extreme", shape.circle, location.belowbar, color.yellow, size=size.tiny, text="1")
-plotshape(showStages and newSellExtreme, "SELL Extreme", shape.circle, location.abovebar, color.orange, size=size.tiny, text="1")
-plotshape(showStages and buyExhaustNow and not buyExhausted[1], "BUY Exhaustion", shape.circle, location.belowbar, color.aqua, size=size.tiny, text="2")
-plotshape(showStages and sellExhaustNow and not sellExhausted[1], "SELL Exhaustion", shape.circle, location.abovebar, color.aqua, size=size.tiny, text="2")
-plotshape(showStages and buyConfirmed, "BUY Confirmation", shape.diamond, location.belowbar, color.blue, size=size.tiny, text="3")
-plotshape(showStages and sellConfirmed, "SELL Confirmation", shape.diamond, location.abovebar, color.blue, size=size.tiny, text="3")
+kernelColor = kernelRising ? color.lime : kernelFalling ? color.red : color.gray
+plot(showKernel ? kernel : na, "Kernel", kernelColor, 3)
+basisPlot = plot(showBands ? bbBasis : na, "BB200 Basis", color.yellow)
+upperPlot = plot(showBands ? bbUpper : na, "BB200 Upper", color.blue, 2)
+lowerPlot = plot(showBands ? bbLower : na, "BB200 Lower", color.blue, 2)
+fill(upperPlot, lowerPlot, color=color.new(color.blue, 92))
+plot(showEMA ? emaBias : na, "EMA200", color.fuchsia, 2)
+plotshape(showSetupDots and newBuyExtreme, "BUY Setup", shape.circle, location.belowbar, color.yellow, size=size.tiny)
+plotshape(showSetupDots and newSellExtreme, "SELL Setup", shape.circle, location.abovebar, color.orange, size=size.tiny)
+plotshape(showInternalMarkers and buyExhaustionNow and not buyExhausted[1], "BUY Exhaustion", shape.circle, location.belowbar, color.aqua, size=size.tiny, text="2")
+plotshape(showInternalMarkers and sellExhaustionNow and not sellExhausted[1], "SELL Exhaustion", shape.circle, location.abovebar, color.aqua, size=size.tiny, text="2")
 if showSignals and finalBuy
     label.new(bar_index, low, "BUY " + str.tostring(buyScore) + "%", style=label.style_label_up, color=color.lime, textcolor=color.black)
 if showSignals and finalSell
     label.new(bar_index, high, "SELL " + str.tostring(sellScore) + "%", style=label.style_label_down, color=color.red, textcolor=color.white)
 
 // DASHBOARD
-stageColour(string stage, bool isBuy) =>
-    if stage == "ENTRY"
-        isBuy ? color.lime : color.red
-    else if stage == "CONFIRM"
-        color.aqua
-    else if stage == "EXHAUST"
-        color.blue
-    else if stage == "EXTREME"
-        color.orange
-    else
-        color.silver
-
+var table dash = table.new(position.top_right, 3, 8, border_width=1)
 buyStage = finalBuy ? "ENTRY" : buyConfirmed ? "CONFIRM" : buyExhausted ? "EXHAUST" : pendingBuy ? "EXTREME" : "WAIT"
 sellStage = finalSell ? "ENTRY" : sellConfirmed ? "CONFIRM" : sellExhausted ? "EXHAUST" : pendingSell ? "EXTREME" : "WAIT"
-var table dash = table.new(position.top_right, 3, 7, border_width=1)
-if barstate.islast
-    if showDashboard
-        table.cell(dash, 0, 0, "MKR X2.2", bgcolor=color.black, text_color=color.white)
-        table.cell(dash, 1, 0, "BUY", bgcolor=color.new(color.green, 55), text_color=color.white)
-        table.cell(dash, 2, 0, "SELL", bgcolor=color.new(color.red, 55), text_color=color.white)
-        table.cell(dash, 0, 1, "Stage")
-        table.cell(dash, 1, 1, buyStage, text_color=stageColour(buyStage, true))
-        table.cell(dash, 2, 1, sellStage, text_color=stageColour(sellStage, false))
-        table.cell(dash, 0, 2, "Score")
-        table.cell(dash, 1, 2, str.tostring(buyScore) + "%", text_color=buyScore >= minimumScore ? color.lime : color.silver)
-        table.cell(dash, 2, 2, str.tostring(sellScore) + "%", text_color=sellScore >= minimumScore ? color.red : color.silver)
-        table.cell(dash, 0, 3, "Kernel")
-        table.cell(dash, 1, 3, kernelUp ? "UP" : "FLAT", text_color=kernelUp ? color.lime : color.gray)
-        table.cell(dash, 2, 3, kernelDown ? "DOWN" : "FLAT", text_color=kernelDown ? color.red : color.gray)
-        table.cell(dash, 0, 4, "Re-entry")
-        table.cell(dash, 1, 4, buyReentry ? "YES" : "NO", text_color=buyReentry ? color.lime : color.gray)
-        table.cell(dash, 2, 4, sellReentry ? "YES" : "NO", text_color=sellReentry ? color.red : color.gray)
-        table.cell(dash, 0, 5, "ATR")
-        table.cell(dash, 1, 5, str.tostring(atrPct, "#.##") + "%", text_color=atrOK ? color.lime : color.orange)
-        table.cell(dash, 2, 5, atrOK ? "PASS" : "BLOCK", text_color=atrOK ? color.lime : color.orange)
-        table.cell(dash, 0, 6, "Position")
-        table.cell(dash, 1, 6, strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT", text_color=color.yellow)
-        table.cell(dash, 2, 6, cooldownOK ? "READY" : "COOLDOWN", text_color=cooldownOK ? color.lime : color.orange)
-    else
-        table.clear(dash, 0, 0, 2, 6)
+if barstate.islast and showDashboard
+    table.cell(dash, 0, 0, "MKR AI X2.3", bgcolor=color.black, text_color=color.white)
+    table.cell(dash, 1, 0, "BUY", bgcolor=color.new(color.green, 55), text_color=color.white)
+    table.cell(dash, 2, 0, "SELL", bgcolor=color.new(color.red, 55), text_color=color.white)
+    table.cell(dash, 0, 1, "Stage")
+    table.cell(dash, 1, 1, buyStage)
+    table.cell(dash, 2, 1, sellStage)
+    table.cell(dash, 0, 2, "Score")
+    table.cell(dash, 1, 2, str.tostring(buyScore) + "%")
+    table.cell(dash, 2, 2, str.tostring(sellScore) + "%")
+    table.cell(dash, 0, 3, "Kernel")
+    table.cell(dash, 1, 3, kernelRising ? "UP" : "FLAT", text_color=kernelRising ? color.lime : color.gray)
+    table.cell(dash, 2, 3, kernelFalling ? "DOWN" : "FLAT", text_color=kernelFalling ? color.red : color.gray)
+    table.cell(dash, 0, 4, "Re-entry")
+    table.cell(dash, 1, 4, buyReentry ? "YES" : "NO", text_color=buyReentry ? color.lime : color.gray)
+    table.cell(dash, 2, 4, sellReentry ? "YES" : "NO", text_color=sellReentry ? color.red : color.gray)
+    table.cell(dash, 0, 5, "Trend Guard")
+    table.cell(dash, 1, 5, buyTrendOK ? "PASS" : "BLOCK", text_color=buyTrendOK ? color.lime : color.orange)
+    table.cell(dash, 2, 5, sellTrendOK ? "PASS" : "BLOCK", text_color=sellTrendOK ? color.lime : color.orange)
+    table.cell(dash, 0, 6, "ADX")
+    table.cell(dash, 1, 6, str.tostring(adxValue, "#.0"))
+    table.cell(dash, 2, 6, strongBullTrend ? "BULL" : strongBearTrend ? "BEAR" : "NORMAL")
+    table.cell(dash, 0, 7, "Position")
+    table.cell(dash, 1, 7, triggerMode)
+    table.cell(dash, 2, 7, strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT")
 
-// ALERTS
-alertcondition(newBuyExtreme, "X2.2 BUY Extreme", "MKR X2.2 BUY extreme outside BB200")
-alertcondition(newSellExtreme, "X2.2 SELL Extreme", "MKR X2.2 SELL extreme outside BB200")
-alertcondition(buyConfirmed, "X2.2 BUY Confirmation", "MKR X2.2 BUY confirmation")
-alertcondition(sellConfirmed, "X2.2 SELL Confirmation", "MKR X2.2 SELL confirmation")
-alertcondition(finalBuy, "X2.2 BUY", "MKR X2.2 BUY entry")
-alertcondition(finalSell, "X2.2 SELL", "MKR X2.2 SELL entry")
+alertcondition(newBuyExtreme, "MKR X2.3 BUY Setup", "MKR AI X2.3 BUY setup")
+alertcondition(newSellExtreme, "MKR X2.3 SELL Setup", "MKR AI X2.3 SELL setup")
+alertcondition(finalBuy, "MKR X2.3 BUY", "MKR AI X2.3 BUY entry confirmed")
+alertcondition(finalSell, "MKR X2.3 SELL", "MKR AI X2.3 SELL entry confirmed")
