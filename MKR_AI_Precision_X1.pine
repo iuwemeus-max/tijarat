@@ -43,7 +43,7 @@ exhaustionWeight = input.int(25, "Exhaustion Weight", minval=0, maxval=100, grou
 
 gProbability = "6. AI Probability Engine"
 volWeight = input.int(10, "Volatility Weight", minval=0, maxval=100, group=gProbability)
-minAtrPercent = input.float(0.15, "Minimum ATR %", minval=0, step=0.01, group=gProbability)
+minAtrPercent = input.float(0.08, "Minimum ATR %", minval=0, step=0.01, group=gProbability)
 maxAtrPercent = input.float(5.0, "Maximum ATR %", minval=0.1, step=0.1, group=gProbability)
 minimumScore = input.int(65, "Minimum AI Score", minval=0, maxval=100, group=gProbability)
 strictMode = input.bool(false, "Strict Mode: all engines must pass", group=gProbability)
@@ -135,12 +135,12 @@ sellBackInside = close < bbUpper and close >= bbLower
 baseBuy = buyTimingOK and buyBackInside
 baseSell = sellTimingOK and sellBackInside
 
-// ENGINE 1: TREND
+// ENGINE 1: REVERSAL TREND CONFIRMATION
 emaFast = ta.ema(close, fastLen)
 emaSlow = ta.ema(close, slowLen)
 emaTrend = ta.ema(close, trendLen)
-trendBull = emaFast > emaSlow and emaSlow > emaTrend and emaFast > emaFast[1] and (not useMajorTrend or close > emaTrend)
-trendBear = emaFast < emaSlow and emaSlow < emaTrend and emaFast < emaFast[1] and (not useMajorTrend or close < emaTrend)
+trendBull = close > emaFast and emaFast > emaFast[1] and close > open
+trendBear = close < emaFast and emaFast < emaFast[1] and close < open
 trendBuyScore = trendBull ? trendWeight : 0
 trendSellScore = trendBear ? trendWeight : 0
 
@@ -193,8 +193,8 @@ sellApproved = baseSell and sellScore >= minimumScore and (not strictMode or all
 var int lastSignalBar = na
 var int lastDirection = 0
 cooldownOK = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
-finalBuy = buyApproved and cooldownOK and lastDirection != 1
-finalSell = sellApproved and cooldownOK and lastDirection != -1
+finalBuy = buyApproved and cooldownOK and strategy.position_size <= 0
+finalSell = sellApproved and cooldownOK and strategy.position_size >= 0
 
 if finalBuy
     lastSignalBar := bar_index
