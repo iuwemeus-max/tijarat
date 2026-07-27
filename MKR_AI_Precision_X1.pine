@@ -1,9 +1,7 @@
 //@version=6
-strategy("MKR AI Precision X1 — Five Engine Strategy", shorttitle="MKR AI X1 5E", overlay=true, pyramiding=0, process_orders_on_close=true, max_bars_back=1500, max_labels_count=500, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+strategy("MKR AI Precision X1 - Five Engine Strategy", shorttitle="MKR AI X1 5E", overlay=true, pyramiding=0, process_orders_on_close=true, max_bars_back=1500, max_labels_count=500, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
 
-//────────────────────────────────────
 // INPUTS
-//────────────────────────────────────
 gKernel = "1. Kernel + BB200 Foundation"
 src = input.source(close, "Kernel Source", group=gKernel)
 bandwidth = input.float(8.0, "Kernel Bandwidth", minval=1.0, step=0.5, group=gKernel)
@@ -70,9 +68,7 @@ showSignals = input.bool(true, "Show Final Signals", group=gDisplay)
 showDashboard = input.bool(true, "Show Dashboard", group=gDisplay)
 showBackground = input.bool(false, "Show Engine Bias Background", group=gDisplay)
 
-//────────────────────────────────────
 // FOUNDATION: NON-REPAINTING GAUSSIAN KERNEL
-//────────────────────────────────────
 gaussianWeight(float distance, float width) =>
     math.exp(-(distance * distance) / (2.0 * width * width))
 
@@ -83,6 +79,7 @@ for i = 0 to kLookback - 1
         float w = gaussianWeight(i, bandwidth)
         weightedSum += src[i] * w
         weightSum += w
+
 kernel = weightSum > 0 ? weightedSum / weightSum : na
 kernelRising = kernel > kernel[kConfirm]
 kernelFalling = kernel < kernel[kConfirm]
@@ -116,6 +113,7 @@ if rawBuySetup
     pendingSell := false
     buySetupBar := bar_index
     sellSetupBar := na
+
 if rawSellSetup
     pendingSell := true
     pendingBuy := false
@@ -125,6 +123,7 @@ if rawSellSetup
 if pendingBuy and not na(buySetupBar) and bar_index - buySetupBar > maxWait
     pendingBuy := false
     buySetupBar := na
+
 if pendingSell and not na(sellSetupBar) and bar_index - sellSetupBar > maxWait
     pendingSell := false
     sellSetupBar := na
@@ -136,9 +135,7 @@ sellBackInside = close < bbUpper and close >= bbLower
 baseBuy = buyTimingOK and buyBackInside
 baseSell = sellTimingOK and sellBackInside
 
-//────────────────────────────────────
 // ENGINE 1: TREND
-//────────────────────────────────────
 emaFast = ta.ema(close, fastLen)
 emaSlow = ta.ema(close, slowLen)
 emaTrend = ta.ema(close, trendLen)
@@ -147,9 +144,7 @@ trendBear = emaFast < emaSlow and emaSlow < emaTrend and emaFast < emaFast[1] an
 trendBuyScore = trendBull ? trendWeight : 0
 trendSellScore = trendBear ? trendWeight : 0
 
-//────────────────────────────────────
 // ENGINE 2: MOMENTUM
-//────────────────────────────────────
 rsi = ta.rsi(close, rsiLen)
 hhWR = ta.highest(high, wrLen)
 llWR = ta.lowest(low, wrLen)
@@ -162,9 +157,7 @@ momentumBear = rsi <= rsiBear and rsi < rsi[1] and wrSellRecovery
 momentumBuyScore = momentumBull ? momentumWeight : 0
 momentumSellScore = momentumBear ? momentumWeight : 0
 
-//────────────────────────────────────
 // ENGINE 3: MARKET STRUCTURE
-//────────────────────────────────────
 bullCandle = close > open
 bearCandle = close < open
 breakPrevHigh = close > high[1]
@@ -176,20 +169,13 @@ structureBear = (not requireCandleDirection or bearCandle) and (not requireBreak
 structureBuyScore = structureBull ? structureWeight : 0
 structureSellScore = structureBear ? structureWeight : 0
 
-//────────────────────────────────────
 // ENGINE 4: EXHAUSTION / RE-ENTRY
-//────────────────────────────────────
-exhaustionBull = baseBuy and kernelRising and low <= bbLower
-exhaustionBear = baseSell and kernelFalling and high >= bbUpper
-// Re-entry may happen after the outside candle, so preserve setup validity too.
-exhaustionBull := baseBuy and kernelRising
-exhaustionBear := baseSell and kernelFalling
+exhaustionBull = baseBuy and kernelRising
+exhaustionBear = baseSell and kernelFalling
 exhaustionBuyScore = exhaustionBull ? exhaustionWeight : 0
 exhaustionSellScore = exhaustionBear ? exhaustionWeight : 0
 
-//────────────────────────────────────
 // ENGINE 5: AI PROBABILITY
-//────────────────────────────────────
 volatilityOK = atrPct >= minAtrPercent and atrPct <= maxAtrPercent
 volBuyScore = volatilityOK ? volWeight : 0
 volSellScore = volatilityOK ? volWeight : 0
@@ -203,9 +189,7 @@ allSellEngines = trendBear and momentumBear and structureBear and exhaustionBear
 buyApproved = baseBuy and buyScore >= minimumScore and (not strictMode or allBuyEngines)
 sellApproved = baseSell and sellScore >= minimumScore and (not strictMode or allSellEngines)
 
-//────────────────────────────────────
 // DUPLICATE PREVENTION / COOLDOWN
-//────────────────────────────────────
 var int lastSignalBar = na
 var int lastDirection = 0
 cooldownOK = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
@@ -217,19 +201,19 @@ if finalBuy
     lastDirection := 1
     pendingBuy := false
     buySetupBar := na
+
 if finalSell
     lastSignalBar := bar_index
     lastDirection := -1
     pendingSell := false
     sellSetupBar := na
 
-//────────────────────────────────────
 // STRATEGY ORDERS
-//────────────────────────────────────
 if finalBuy and enableLong
     if closeOpposite
         strategy.close("Short", comment="Close Short")
     strategy.entry("Long", strategy.long, comment="5E BUY")
+
 if finalSell and enableShort
     if closeOpposite
         strategy.close("Long", comment="Close Long")
@@ -244,66 +228,75 @@ longTrailActivation = strategy.position_avg_price * (1 + trailActivatePct / 100)
 shortTrailActivation = strategy.position_avg_price * (1 - trailActivatePct / 100)
 
 if strategy.position_size > 0
-    strategy.exit("Long Exit", "Long", stop=stopLossPct > 0 ? longSL : na, limit=takeProfitPct > 0 ? longTP : na, trail_price=useTrailing ? longTrailActivation : na, trail_offset=useTrailing ? trailTicks : na)
+    if useTrailing
+        strategy.exit("Long Exit", from_entry="Long", stop=stopLossPct > 0 ? longSL : na, limit=takeProfitPct > 0 ? longTP : na, trail_price=longTrailActivation, trail_offset=trailTicks)
+    else if stopLossPct > 0 or takeProfitPct > 0
+        strategy.exit("Long Exit", from_entry="Long", stop=stopLossPct > 0 ? longSL : na, limit=takeProfitPct > 0 ? longTP : na)
+
 if strategy.position_size < 0
-    strategy.exit("Short Exit", "Short", stop=stopLossPct > 0 ? shortSL : na, limit=takeProfitPct > 0 ? shortTP : na, trail_price=useTrailing ? shortTrailActivation : na, trail_offset=useTrailing ? trailTicks : na)
+    if useTrailing
+        strategy.exit("Short Exit", from_entry="Short", stop=stopLossPct > 0 ? shortSL : na, limit=takeProfitPct > 0 ? shortTP : na, trail_price=shortTrailActivation, trail_offset=trailTicks)
+    else if stopLossPct > 0 or takeProfitPct > 0
+        strategy.exit("Short Exit", from_entry="Short", stop=stopLossPct > 0 ? shortSL : na, limit=takeProfitPct > 0 ? shortTP : na)
 
-//────────────────────────────────────
 // PLOTS
-//────────────────────────────────────
 kColor = kernelRising ? color.lime : kernelFalling ? color.red : color.gray
-plot(showKernel ? kernel : na, "Kernel", kColor, 3)
-basisPlot = plot(showBands ? bbBasis : na, "BB200 Basis", color.yellow)
-upperPlot = plot(showBands ? bbUpper : na, "BB200 Upper", color.blue, 2)
-lowerPlot = plot(showBands ? bbLower : na, "BB200 Lower", color.blue, 2)
+plot(showKernel ? kernel : na, title="Kernel", color=kColor, linewidth=3)
+basisPlot = plot(showBands ? bbBasis : na, title="BB200 Basis", color=color.yellow)
+upperPlot = plot(showBands ? bbUpper : na, title="BB200 Upper", color=color.blue, linewidth=2)
+lowerPlot = plot(showBands ? bbLower : na, title="BB200 Lower", color=color.blue, linewidth=2)
 fill(upperPlot, lowerPlot, color=color.new(color.blue, 92), title="BB200 Area")
-plot(showEMAs ? emaFast : na, "Fast EMA", color.aqua)
-plot(showEMAs ? emaSlow : na, "Slow EMA", color.orange)
-plot(showEMAs ? emaTrend : na, "Major EMA", color.fuchsia, 2)
+plot(showEMAs ? emaFast : na, title="Fast EMA", color=color.aqua)
+plot(showEMAs ? emaSlow : na, title="Slow EMA", color=color.orange)
+plot(showEMAs ? emaTrend : na, title="Major EMA", color=color.fuchsia, linewidth=2)
 
-plotshape(showSetups and rawBuySetup, "BUY Setup", shape.circle, location.belowbar, color.new(color.lime, 30), size=size.tiny, text="S")
-plotshape(showSetups and rawSellSetup, "SELL Setup", shape.circle, location.abovebar, color.new(color.red, 30), size=size.tiny, text="S")
-plotshape(showSignals and finalBuy, "Five Engine BUY", shape.labelup, location.belowbar, color.lime, textcolor=color.black, size=size.small, text="BUY\n" + str.tostring(buyScore) + "%")
-plotshape(showSignals and finalSell, "Five Engine SELL", shape.labeldown, location.abovebar, color.red, textcolor=color.white, size=size.small, text="SELL\n" + str.tostring(sellScore) + "%")
+plotshape(showSetups and rawBuySetup, title="BUY Setup", style=shape.circle, location=location.belowbar, color=color.new(color.lime, 30), size=size.tiny, text="S")
+plotshape(showSetups and rawSellSetup, title="SELL Setup", style=shape.circle, location=location.abovebar, color=color.new(color.red, 30), size=size.tiny, text="S")
+
+if showSignals and finalBuy
+    label.new(bar_index, low, "BUY " + str.tostring(buyScore) + "%", style=label.style_label_up, color=color.lime, textcolor=color.black, size=size.small)
+
+if showSignals and finalSell
+    label.new(bar_index, high, "SELL " + str.tostring(sellScore) + "%", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
 
 bias = buyScore > sellScore ? 1 : sellScore > buyScore ? -1 : 0
-bgcolor(showBackground ? bias == 1 ? color.new(color.green, 93) : bias == -1 ? color.new(color.red, 93) : na : na)
+bgcolor(showBackground ? (bias == 1 ? color.new(color.green, 93) : bias == -1 ? color.new(color.red, 93) : na) : na)
 
-//────────────────────────────────────
 // DASHBOARD
-//────────────────────────────────────
 var table dash = table.new(position.top_right, 3, 8, border_width=1)
 statusText(bool bull, bool bear) => bull ? "BULL" : bear ? "BEAR" : "NEUTRAL"
 statusColor(bool bull, bool bear) => bull ? color.lime : bear ? color.red : color.silver
-if barstate.islast and showDashboard
-    table.cell(dash, 0, 0, "MKR AI X1", bgcolor=color.black, text_color=color.white)
-    table.cell(dash, 1, 0, "BUY", bgcolor=color.new(color.green, 55), text_color=color.white)
-    table.cell(dash, 2, 0, "SELL", bgcolor=color.new(color.red, 55), text_color=color.white)
-    table.cell(dash, 0, 1, "AI Score")
-    table.cell(dash, 1, 1, str.tostring(buyScore) + "%", text_color=buyScore >= minimumScore ? color.lime : color.silver)
-    table.cell(dash, 2, 1, str.tostring(sellScore) + "%", text_color=sellScore >= minimumScore ? color.red : color.silver)
-    table.cell(dash, 0, 2, "Trend")
-    table.cell(dash, 1, 2, trendBull ? "PASS" : "FAIL", text_color=trendBull ? color.lime : color.gray)
-    table.cell(dash, 2, 2, trendBear ? "PASS" : "FAIL", text_color=trendBear ? color.red : color.gray)
-    table.cell(dash, 0, 3, "Momentum")
-    table.cell(dash, 1, 3, momentumBull ? "PASS" : "FAIL", text_color=momentumBull ? color.lime : color.gray)
-    table.cell(dash, 2, 3, momentumBear ? "PASS" : "FAIL", text_color=momentumBear ? color.red : color.gray)
-    table.cell(dash, 0, 4, "Structure")
-    table.cell(dash, 1, 4, structureBull ? "PASS" : "FAIL", text_color=structureBull ? color.lime : color.gray)
-    table.cell(dash, 2, 4, structureBear ? "PASS" : "FAIL", text_color=structureBear ? color.red : color.gray)
-    table.cell(dash, 0, 5, "Exhaustion")
-    table.cell(dash, 1, 5, exhaustionBull ? "PASS" : "WAIT", text_color=exhaustionBull ? color.lime : color.gray)
-    table.cell(dash, 2, 5, exhaustionBear ? "PASS" : "WAIT", text_color=exhaustionBear ? color.red : color.gray)
-    table.cell(dash, 0, 6, "Volatility")
-    table.cell(dash, 1, 6, str.tostring(atrPct, "#.##") + "%", text_color=volatilityOK ? color.lime : color.orange)
-    table.cell(dash, 2, 6, volatilityOK ? "PASS" : "BLOCK", text_color=volatilityOK ? color.lime : color.orange)
-    table.cell(dash, 0, 7, "Bias")
-    table.cell(dash, 1, 7, statusText(bias == 1, bias == -1), text_color=statusColor(bias == 1, bias == -1))
-    table.cell(dash, 2, 7, strictMode ? "STRICT" : "SCORE", text_color=color.yellow)
 
-//────────────────────────────────────
+if barstate.islast
+    if showDashboard
+        table.cell(dash, 0, 0, "MKR AI X1", bgcolor=color.black, text_color=color.white)
+        table.cell(dash, 1, 0, "BUY", bgcolor=color.new(color.green, 55), text_color=color.white)
+        table.cell(dash, 2, 0, "SELL", bgcolor=color.new(color.red, 55), text_color=color.white)
+        table.cell(dash, 0, 1, "AI Score")
+        table.cell(dash, 1, 1, str.tostring(buyScore) + "%", text_color=buyScore >= minimumScore ? color.lime : color.silver)
+        table.cell(dash, 2, 1, str.tostring(sellScore) + "%", text_color=sellScore >= minimumScore ? color.red : color.silver)
+        table.cell(dash, 0, 2, "Trend")
+        table.cell(dash, 1, 2, trendBull ? "PASS" : "FAIL", text_color=trendBull ? color.lime : color.gray)
+        table.cell(dash, 2, 2, trendBear ? "PASS" : "FAIL", text_color=trendBear ? color.red : color.gray)
+        table.cell(dash, 0, 3, "Momentum")
+        table.cell(dash, 1, 3, momentumBull ? "PASS" : "FAIL", text_color=momentumBull ? color.lime : color.gray)
+        table.cell(dash, 2, 3, momentumBear ? "PASS" : "FAIL", text_color=momentumBear ? color.red : color.gray)
+        table.cell(dash, 0, 4, "Structure")
+        table.cell(dash, 1, 4, structureBull ? "PASS" : "FAIL", text_color=structureBull ? color.lime : color.gray)
+        table.cell(dash, 2, 4, structureBear ? "PASS" : "FAIL", text_color=structureBear ? color.red : color.gray)
+        table.cell(dash, 0, 5, "Exhaustion")
+        table.cell(dash, 1, 5, exhaustionBull ? "PASS" : "WAIT", text_color=exhaustionBull ? color.lime : color.gray)
+        table.cell(dash, 2, 5, exhaustionBear ? "PASS" : "WAIT", text_color=exhaustionBear ? color.red : color.gray)
+        table.cell(dash, 0, 6, "Volatility")
+        table.cell(dash, 1, 6, str.tostring(atrPct, "#.##") + "%", text_color=volatilityOK ? color.lime : color.orange)
+        table.cell(dash, 2, 6, volatilityOK ? "PASS" : "BLOCK", text_color=volatilityOK ? color.lime : color.orange)
+        table.cell(dash, 0, 7, "Bias")
+        table.cell(dash, 1, 7, statusText(bias == 1, bias == -1), text_color=statusColor(bias == 1, bias == -1))
+        table.cell(dash, 2, 7, strictMode ? "STRICT" : "SCORE", text_color=color.yellow)
+    else
+        table.clear(dash, 0, 0, 2, 7)
+
 // ALERTS
-//────────────────────────────────────
 alertcondition(rawBuySetup, "MKR BUY Setup", "MKR AI X1: BUY setup detected outside BB200")
 alertcondition(rawSellSetup, "MKR SELL Setup", "MKR AI X1: SELL setup detected outside BB200")
 alertcondition(finalBuy, "MKR Five Engine BUY", "MKR AI X1: Five-engine BUY confirmed")
