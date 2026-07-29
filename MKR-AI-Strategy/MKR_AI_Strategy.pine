@@ -1,0 +1,7 @@
+//@version=6
+strategy("MKR AI Strategy v0.1", overlay=true)
+
+// Initial project scaffold.
+// Full strategy implementation will be developed incrementally.
+
+plot(close, title="Close")
